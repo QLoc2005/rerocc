@@ -4,6 +4,7 @@ import chisel3._
 import org.chipsalliance.cde.config._
 import freechips.rocketchip.tile.{BuildRoCC}
 import freechips.rocketchip.diplomacy.{LazyModule}
+import freechips.rocketchip.subsystem.{SubsystemInjectorKey}
 
 import rerocc.client._
 import rerocc.manager._
@@ -15,6 +16,7 @@ class WithReRoCC(clientParams: ReRoCCClientParams = ReRoCCClientParams(), reRoCC
     rerocc_client
   })
   case ReRoCCTileKey => up(BuildRoCC).map(gen => reRoCCManagerParams.copy(genRoCC=Some(gen)))
+  case SubsystemInjectorKey => up(SubsystemInjectorKey) + ReRoCCInjector
 })
 
 class WithReRoCCNoC(nocParams: ReRoCCNoCParams) extends Config((site, here, up) => {

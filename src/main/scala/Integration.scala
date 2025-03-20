@@ -21,9 +21,11 @@ import rerocc.bus._
 case object ReRoCCControlBus extends Field[TLBusWrapperLocation](CBUS)
 case object ReRoCCNoCKey extends Field[Option[ReRoCCNoCParams]](None)
 
-trait CanHaveReRoCCTiles { this: BaseSubsystem with InstantiatesHierarchicalElements with constellation.soc.CanHaveGlobalNoC =>
+case object ReRoCCInjector extends SubsystemInjector((p, base) =>{
+  val baseSubsystem = base.asInstanceOf[BaseSubsystem with InstantiatesHierarchicalElements with constellation.soc.CanHaveGlobalNoC]
+  implicit val q: Parameters = p
   // WARNING: Not multi-clock safe
-  val reRoCCClients = totalTiles.values.map { t => t match {
+  val reRoCCClients = baseSubsystem.totalTiles.values.map { t => t match {
     case r: RocketTile => r.roccs collect { case r: ReRoCCClient => (t, r) }
     case b: BoomTile => b.roccs collect { case r: ReRoCCClient => (t, r) }
     case s: ShuttleTile => s.roccs collect { case r: ReRoCCClient => (t, r) } // Added for shuttle
@@ -41,17 +43,17 @@ trait CanHaveReRoCCTiles { this: BaseSubsystem with InstantiatesHierarchicalElem
     shouldBeInlined = false // can't inline something whose output we are are dontTouching
   )).node
   val reRoCCManagers = p(ReRoCCTileKey).zipWithIndex.map { case (g,i) =>
-    val rerocc_prci_domain = locateTLBusWrapper(SBUS).generateSynchronousDomain.suggestName(s"rerocc_prci_domain_$i")
+    val rerocc_prci_domain = baseSubsystem.locateTLBusWrapper(SBUS).generateSynchronousDomain.suggestName(s"rerocc_prci_domain_$i")
     val rerocc_tile = rerocc_prci_domain { LazyModule(new ReRoCCManagerTile(
       g.copy(reroccId = i, pgLevels = reRoCCClients.head._2.pgLevels), p)) }
     println(s"ReRoCC Manager id $i is a ${rerocc_tile.rocc}")
-    locateTLBusWrapper(SBUS).coupleFrom(s"port_named_rerocc_$i") {
+    baseSubsystem.locateTLBusWrapper(SBUS).coupleFrom(s"port_named_rerocc_$i") {
       (_ :=* TLBuffer() :=* rerocc_tile.tlNode)
     }
-    locateTLBusWrapper(SBUS).coupleTo(s"sport_named_rerocc_$i") {
-      (rerocc_tile.stlNode :*= TLBuffer() :*= TLWidthWidget(locateTLBusWrapper(SBUS).beatBytes) :*= TLBuffer() :*= _)
+    baseSubsystem.locateTLBusWrapper(SBUS).coupleTo(s"sport_named_rerocc_$i") {
+      (rerocc_tile.stlNode :*= TLBuffer() :*= TLWidthWidget(baseSubsystem.locateTLBusWrapper(SBUS).beatBytes) :*= TLBuffer() :*= _)
     }
-    val ctrlBus = locateTLBusWrapper(p(ReRoCCControlBus))
+    val ctrlBus = baseSubsystem.locateTLBusWrapper(p(ReRoCCControlBus))
     ctrlBus.coupleTo(s"port_named_rerocc_ctrl_$i") {
       val remapper = ctrlBus { LazyModule(new ReRoCCManagerControlRemapper(i)) }
       (rerocc_tile.ctrl.ctrlNode := remapper.node := TLFragmenter(ctrlBus.beatBytes, ctrlBus.blockBytes) := _)
@@ -64,11 +66,11 @@ trait CanHaveReRoCCTiles { this: BaseSubsystem with InstantiatesHierarchicalElem
   if (!reRoCCClients.isEmpty) {
     require(reRoCCClients.map(_._2).forall(_.pgLevels == reRoCCClients.head._2.pgLevels))
     require(reRoCCClients.map(_._2).forall(_.xLen == 64))
-    val rerocc_bus_domain = locateTLBusWrapper(SBUS).generateSynchronousDomain
+    val rerocc_bus_domain = baseSubsystem.locateTLBusWrapper(SBUS).generateSynchronousDomain
     rerocc_bus_domain {
       val rerocc_bus = p(ReRoCCNoCKey).map { k =>
         if (k.useGlobalNoC) {
-          globalNoCDomain { LazyModule(new ReRoCCGlobalNoC(k)) }
+          baseSubsystem.globalNoCDomain { LazyModule(new ReRoCCGlobalNoC(k)) }
         } else {
           LazyModule(new ReRoCCNoC(k))
         }
@@ -77,4 +79,4 @@ trait CanHaveReRoCCTiles { this: BaseSubsystem with InstantiatesHierarchicalElem
       reRoCCManagers.foreach { m => m.reRoCCNode := rerocc_bus.node }
     }
   }
-}
+})
