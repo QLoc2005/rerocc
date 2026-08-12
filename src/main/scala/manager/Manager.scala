@@ -53,6 +53,10 @@ class ReRoCCManager(reRoCCTileParams: ReRoCCTileParams, roccOpcode: UInt)(implic
     val status = Reg(new MStatus)
     val ptbr = Reg(new PTBR)
     val state = RegInit(s_idle)
+    val completion_armed = RegInit(false.B)
+    val completion_client = Reg(UInt(edge.bundle.clientIdBits.W))
+    val completion_cfg = Reg(UInt(ReRoCCProtocol.CfgBits.W))
+    val completion_token = Reg(UInt(ReRoCCProtocol.TokenBits.W))
 
     io.ptw.ptbr := ptbr
     io.ptw.hgatp := 0.U.asTypeOf(new PTBR)
@@ -88,7 +92,8 @@ class ReRoCCManager(reRoCCTileParams: ReRoCCTileParams, roccOpcode: UInt)(implic
     // 2 -> writeback
     // 3 -> rel
     // 4 -> unbusyack
-    val resp_arb = Module(new ReRoCCMsgArbiter(edge.bundle, 5, false))
+    // 5 -> asynchronous completion
+    val resp_arb = Module(new ReRoCCMsgArbiter(edge.bundle, 6, false))
     rr_resp <> resp_arb.io.out
     resp_arb.io.in.foreach { i => i.valid := false.B }
 
@@ -139,6 +144,14 @@ class ReRoCCManager(reRoCCTileParams: ReRoCCTileParams, roccOpcode: UInt)(implic
       } .elsewhen (rr_req.bits.opcode === ReRoCCProtocol.mUnbusy) {
         rr_req.ready := true.B
         state := s_unbusy
+      } .elsewhen (rr_req.bits.opcode === ReRoCCProtocol.mCompletionArm) {
+        rr_req.ready := state === s_active && !completion_armed
+        when (rr_req.fire) {
+          completion_armed := true.B
+          completion_client := rr_req.bits.client_id
+          completion_cfg := ReRoCCProtocol.requestCfg(rr_req.bits.data)
+          completion_token := ReRoCCProtocol.requestToken(rr_req.bits.data)
+        }
       } .otherwise {
         assert(false.B)
       }
@@ -191,6 +204,19 @@ class ReRoCCManager(reRoCCTileParams: ReRoCCTileParams, roccOpcode: UInt)(implic
     resp_arb.io.in(4).bits.data       := 0.U
 
     when (resp_arb.io.in(4).fire) { state := s_active }
+
+    // Retain an async completion until the response network accepts it.
+    // Completion is only visible once all queued instructions and the
+    // wrapped accelerator are idle.
+    resp_arb.io.in(5).valid := completion_armed && !io.busy && inst_q.io.count === 0.U
+    resp_arb.io.in(5).bits.opcode     := ReRoCCProtocol.sCompletion
+    resp_arb.io.in(5).bits.client_id  := completion_client
+    resp_arb.io.in(5).bits.manager_id := io.manager_id
+    resp_arb.io.in(5).bits.data       := ReRoCCProtocol.packCompletionResponse(
+      completion_cfg, completion_token, 0.U)
+    when (resp_arb.io.in(5).fire) {
+      completion_armed := false.B
+    }
   }
 }
 

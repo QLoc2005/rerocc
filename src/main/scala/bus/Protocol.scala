@@ -27,6 +27,7 @@ object ReRoCCProtocol {
   val mUPtbr        = 3.U(width.W)
   val mRelease      = 4.U(width.W)
   val mUnbusy       = 5.U(width.W)
+  val mCompletionArm = 6.U(width.W)
 
   // data
   // data = acquired
@@ -38,6 +39,25 @@ object ReRoCCProtocol {
   val sWrite     = 2.U(width.W)
   val sRelResp   = 3.U(width.W)
   val sUnbusyAck = 4.U(width.W)
+  val sCompletion = 5.U(width.W)
+
+  val CfgBits = 24
+  val TokenBits = 32
+  val StatusBits = 8
+
+  def packCompletionRequest(cfg: UInt, token: UInt): UInt =
+    Cat(cfg.pad(CfgBits)(CfgBits - 1, 0), token.pad(TokenBits)(TokenBits - 1, 0), 0.U(8.W))
+
+  def requestCfg(data: UInt): UInt = data(63, 40)
+  def requestToken(data: UInt): UInt = data(39, 8)
+
+  def packCompletionResponse(cfg: UInt, token: UInt, status: UInt): UInt =
+    Cat(cfg.pad(CfgBits)(CfgBits - 1, 0), token.pad(TokenBits)(TokenBits - 1, 0),
+      status.pad(StatusBits)(StatusBits - 1, 0))
+
+  def responseCfg(data: UInt): UInt = data(63, 40)
+  def responseToken(data: UInt): UInt = data(39, 8)
+  def responseStatus(data: UInt): UInt = data(7, 0)
 
   val MAX_BEATS = 3
 }
@@ -47,6 +67,13 @@ class ReRoCCMsgBundle(val params: ReRoCCBundleParams) extends Bundle {
   val client_id  = UInt(params.clientIdBits.W)
   val manager_id = UInt(params.managerIdBits.W)
   val data       = UInt(64.W)
+}
+
+class ReRoCCCompletion(val params: ReRoCCBundleParams) extends Bundle {
+  val cfg_id = UInt(ReRoCCProtocol.CfgBits.W)
+  val manager_id = UInt(8.W)
+  val token = UInt(ReRoCCProtocol.TokenBits.W)
+  val status = UInt(ReRoCCProtocol.StatusBits.W)
 }
 
 object ReRoCCMsgFirstLast {

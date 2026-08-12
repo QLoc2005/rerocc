@@ -81,7 +81,10 @@ class ReRoCCClient(_params: ReRoCCClientParams = ReRoCCClientParams())(implicit 
     val csr_opc_io = io.csrs.take(4)
     val csr_bar_io = io.csrs(4)
     val csr_irq_io = io.csrs(5)
-    val csr_cfg_io = io.csrs.drop(6)
+    val csr_async_io = io.csrs(6)
+    val csr_completion_count_io = io.csrs(7)
+    val csr_completion_data_io = io.csrs(8)
+    val csr_cfg_io = io.csrs.drop(9)
 
     val csr_opc = Reg(Vec(4, UInt(log2Ceil(nCfgs).W)))
     val csr_opc_next = WireInit(csr_opc)
@@ -93,6 +96,11 @@ class ReRoCCClient(_params: ReRoCCClientParams = ReRoCCClientParams())(implicit 
     val software_clear = csr_irq_io.wen && csr_irq_io.wdata(0)
     val irq_pending_next = Mux(completion_set, true.B,
       Mux(software_clear, false.B, irq_pending))
+    val async_req_pending = RegInit(false.B)
+    val async_req_cfg = Reg(UInt(ReRoCCProtocol.CfgBits.W))
+    val async_req_token = Reg(UInt(ReRoCCProtocol.TokenBits.W))
+    val async_cfg_id = async_req_cfg(log2Ceil(nCfgs) - 1, 0)
+    val completion_fifo = Module(new Queue(new ReRoCCCompletion(edge.bundle), 16))
     val cfg_credits = RegInit(VecInit.fill(nCfgs) { p(ReRoCCIBufEntriesKey).U })
     val cfg_updatestatus = Reg(Vec(nCfgs, Bool()))
     val cfg_updateptbr = Reg(Vec(nCfgs, Bool()))
@@ -114,7 +122,20 @@ class ReRoCCClient(_params: ReRoCCClientParams = ReRoCCClientParams())(implicit 
     csr_irq_io.set := true.B
     csr_irq_io.sdata := irq_pending_next
     irq_pending := irq_pending_next
-    io.interrupt := irq_pending
+    csr_async_io.set := false.B
+    csr_async_io.sdata := 0.U
+    csr_async_io.stall := async_req_pending
+    csr_completion_count_io.set := true.B
+    csr_completion_count_io.sdata := completion_fifo.io.count
+    csr_completion_data_io.set := true.B
+    csr_completion_data_io.sdata := Mux(completion_fifo.io.deq.valid,
+      Cat(0.U(8.W), completion_fifo.io.deq.bits.status,
+        completion_fifo.io.deq.bits.manager_id,
+        completion_fifo.io.deq.bits.cfg_id(7, 0),
+        completion_fifo.io.deq.bits.token), 0.U)
+    csr_completion_data_io.stall := !completion_fifo.io.deq.valid
+    completion_fifo.io.deq.ready := csr_completion_data_io.ren && completion_fifo.io.deq.valid
+    io.interrupt := irq_pending || completion_fifo.io.deq.valid
 
     val s_idle :: s_acq :: s_acq_ack :: s_rel :: s_rel_ack :: s_status0 :: s_status1 :: s_ptbr :: Nil = Enum(8)
     val cfg_acq_state = RegInit(s_idle)
@@ -170,8 +191,14 @@ class ReRoCCClient(_params: ReRoCCClientParams = ReRoCCClientParams())(implicit 
       cfg_fence_state(csr_bar_io.wdata) := f_req
     }
 
-    // 0 -> cfg, 1 -> inst, 2 -> unbusy
-    val req_arb = Module(new ReRoCCMsgArbiter(edge.bundle, 3, true))
+    when (csr_async_io.wen && !async_req_pending) {
+      async_req_pending := true.B
+      async_req_cfg := csr_async_io.wdata(63, 40)
+      async_req_token := csr_async_io.wdata(39, 8)
+    }
+
+    // 0 -> cfg, 1 -> inst, 2 -> unbusy, 3 -> async completion arm
+    val req_arb = Module(new ReRoCCMsgArbiter(edge.bundle, 4, true))
     rerocc.req <> req_arb.io.out
 
     def Mux1HSel[T <: Data](sel: UInt, lookup: Seq[(UInt, T)]) = Mux1H(
@@ -233,6 +260,23 @@ class ReRoCCClient(_params: ReRoCCClientParams = ReRoCCClientParams())(implicit 
       cfg_fence_state(OHToUInt(f_req_oh)) := f_ack
     }
 
+    req_arb.io.in(3).valid := async_req_pending
+    req_arb.io.in(3).bits.opcode := ReRoCCProtocol.mCompletionArm
+    req_arb.io.in(3).bits.client_id := async_cfg_id
+    req_arb.io.in(3).bits.manager_id := csr_cfg(async_cfg_id).mgr
+    req_arb.io.in(3).bits.data := ReRoCCProtocol.packCompletionRequest(
+      async_req_cfg, async_req_token)
+    when (req_arb.io.in(3).fire) {
+      async_req_pending := false.B
+    }
+
+    completion_fifo.io.enq.valid := rerocc.resp.valid &&
+      rerocc.resp.bits.opcode === ReRoCCProtocol.sCompletion
+    completion_fifo.io.enq.bits.cfg_id := ReRoCCProtocol.responseCfg(rerocc.resp.bits.data)
+    completion_fifo.io.enq.bits.manager_id := rerocc.resp.bits.manager_id
+    completion_fifo.io.enq.bits.token := ReRoCCProtocol.responseToken(rerocc.resp.bits.data)
+    completion_fifo.io.enq.bits.status := ReRoCCProtocol.responseStatus(rerocc.resp.bits.data)
+
     rerocc.resp.ready := false.B
     when (rerocc.resp.bits.opcode === ReRoCCProtocol.sAcqResp) {
       rerocc.resp.ready := true.B
@@ -274,6 +318,10 @@ class ReRoCCClient(_params: ReRoCCClientParams = ReRoCCClientParams())(implicit 
       }
     }
 
+    when (rerocc.resp.bits.opcode === ReRoCCProtocol.sCompletion) {
+      rerocc.resp.ready := completion_fifo.io.enq.ready
+    }
+
     when (cfg_credit_enq.valid) {
       assert(cfg_credits(cfg_credit_enq.bits) =/= p(ReRoCCIBufEntriesKey).U)
       cfg_credits(cfg_credit_enq.bits) := cfg_credits(cfg_credit_enq.bits) + 1.U
@@ -286,6 +334,7 @@ class ReRoCCClient(_params: ReRoCCClientParams = ReRoCCClientParams())(implicit 
     }
 
     io.busy := (cfg_acq_state =/= s_idle ||
+      async_req_pending ||
       cfg_credits.map(_ =/= p(ReRoCCIBufEntriesKey).U).orR ||
       cfg_fence_state.map(_ =/= f_idle).orR
     )

@@ -2,6 +2,8 @@
 #include <stdio.h>
 
 static volatile uint64_t rr_irq_count;
+static volatile uint64_t rr_async_completion_count;
+static struct rr_completion rr_completions[5];
 
 uintptr_t handle_trap(uintptr_t epc, uintptr_t cause, uintptr_t tval,
                       uintptr_t regs[32]) {
@@ -9,6 +11,13 @@ uintptr_t handle_trap(uintptr_t epc, uintptr_t cause, uintptr_t tval,
   if (cause == RR_IRQ_MCAUSE && rr_irq_pending()) {
     rr_irq_count++;
     rr_irq_ack();
+  }
+  if (cause == RR_IRQ_MCAUSE) {
+    while (rr_completion_available()) {
+      if (rr_async_completion_count >= 5) abort();
+      if (!rr_completion_pop(&rr_completions[rr_async_completion_count])) abort();
+      rr_async_completion_count++;
+    }
     return epc;
   }
 
@@ -108,6 +117,32 @@ int main(void) {
   rr_set_opc(0x2, 4);
   r += charcount_test();
   rr_fence(4);
+
+  // Phase 2: submit completions without waiting for accelerator idle.  The
+  // bounded CPU work below proves that rr_async_end returns immediately.
+  volatile uint64_t cpu_progress = 0;
+  for (int i = 0; i < 4; i++) {
+    rr_set_opc(0x1, i);
+    r += accum_test();
+    rr_async_end(i, 0xabc00000U + i);
+    cpu_progress += (uint64_t)(i + 1);
+  }
+  rr_set_opc(0x2, 4);
+  r += charcount_test();
+  rr_async_end(4, 0xabc00004U);
+  cpu_progress += 5;
+
+  for (uint32_t spin = 0; spin < 1000000 && rr_async_completion_count < 5; spin++)
+    cpu_progress += spin & 1;
+
+  if (cpu_progress == 0 || rr_async_completion_count != 5) return 1;
+  bool seen[5] = {false, false, false, false, false};
+  for (uint64_t i = 0; i < rr_async_completion_count; i++) {
+    struct rr_completion *c = &rr_completions[i];
+    if (c->status != 0 || c->cfg_id >= 5 || c->manager_id >= 5 ||
+        c->token != 0xabc00000U + c->cfg_id || seen[c->cfg_id]) return 1;
+    seen[c->cfg_id] = true;
+  }
 
   for (int i = 0; i < 16; i++) rr_release(i);
 

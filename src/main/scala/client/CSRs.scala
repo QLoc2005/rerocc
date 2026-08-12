@@ -14,6 +14,9 @@ object ReRoCCCSRs {
   val rropc3 = (0x803, log2Ceil(MAX_CFGS))
   val rrbar = (0x804, log2Ceil(MAX_CFGS))
   val rrirq = (0x805, 1)
+  val rrAsyncEnd = (0x806, 64)
+  val rrCompletionCount = (0x807, 5)
+  val rrCompletionData = (0x808, 64)
 
   val rrcfg0 = (0x810, 9)
   val rrcfg1 = (0x811, 9)
@@ -34,6 +37,7 @@ object ReRoCCCSRs {
 
   def customCSRs(nCfgs: Int) = (Seq(
     rropc0, rropc1, rropc2, rropc3, rrbar, rrirq,
+    rrAsyncEnd, rrCompletionCount, rrCompletionData,
   ) ++ Seq(
     rrcfg0, rrcfg1, rrcfg2, rrcfg3,
     rrcfg4, rrcfg5, rrcfg6, rrcfg7,

@@ -36,6 +36,9 @@
 #define CSR_RROPC3 0x803
 #define CSR_RRBAR 0x804
 #define CSR_RRIRQ 0x805
+#define CSR_RRASYNC_END 0x806
+#define CSR_RRCOMPLETION_COUNT 0x807
+#define CSR_RRCOMPLETION_DATA 0x808
 
 #define CSR_RRCFG0 0x810
 #define CSR_RRCFG1 0x811
@@ -57,6 +60,9 @@
 #define LIST_OF_RR_CSRS \
   F(CSR_RRBAR) \
   F(CSR_RRIRQ) \
+  F(CSR_RRASYNC_END) \
+  F(CSR_RRCOMPLETION_COUNT) \
+  F(CSR_RRCOMPLETION_DATA) \
   F(CSR_RROPC0) \
   F(CSR_RROPC1) \
   F(CSR_RROPC2) \
@@ -148,6 +154,34 @@ static inline bool rr_irq_pending(void) {
 
 static inline void rr_irq_ack(void) {
   write_rr_csr(CSR_RRIRQ, 1);
+}
+
+struct rr_completion {
+  uint32_t token;
+  uint32_t cfg_id;
+  uint8_t manager_id;
+  uint8_t status;
+};
+
+static inline void rr_async_end(uint32_t cfg_id, uint32_t token) {
+  uint64_t data = ((uint64_t)(cfg_id & 0x00ffffffU) << 40) |
+                  ((uint64_t)token << 8);
+  write_rr_csr(CSR_RRASYNC_END, data);
+  asm volatile("fence");
+}
+
+static inline bool rr_completion_available(void) {
+  return read_rr_csr(CSR_RRCOMPLETION_COUNT) != 0;
+}
+
+static inline bool rr_completion_pop(struct rr_completion *completion) {
+  if (!rr_completion_available()) return false;
+  uint64_t data = read_rr_csr(CSR_RRCOMPLETION_DATA);
+  completion->token = (uint32_t)data;
+  completion->cfg_id = (uint32_t)((data >> 32) & 0xff);
+  completion->manager_id = (uint8_t)((data >> 40) & 0xff);
+  completion->status = (uint8_t)((data >> 48) & 0xff);
+  return true;
 }
 
 #endif

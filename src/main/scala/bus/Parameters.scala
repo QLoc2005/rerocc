@@ -24,8 +24,9 @@ case class ReRoCCEdgeParams(
   require(cParams.clients.size >= 1 && mParams.managers.size >= 1)
   val bundle = ReRoCCBundleParams(
     log2Ceil(cParams.clients.map(_.nCfgs).sum),
-    if (mParams.managers.size == 1) 1 else log2Ceil(mParams.managers.map(_.managerId).max + 1)
+    8
   )
+  require(mParams.managers.forall(_.managerId < 256))
 }
 
 case class ReRoCCBundleParams(
