@@ -13,11 +13,12 @@ uintptr_t handle_trap(uintptr_t epc, uintptr_t cause, uintptr_t tval,
     rr_irq_ack();
   }
   if (cause == RR_IRQ_MCAUSE) {
-    while (rr_completion_available()) {
+    for (uint32_t n = 0; n < 16 && rr_completion_available(); n++) {
       if (rr_async_completion_count >= 5) abort();
       if (!rr_completion_pop(&rr_completions[rr_async_completion_count])) abort();
       rr_async_completion_count++;
     }
+    if (rr_completion_available()) abort();
     return epc;
   }
 
@@ -143,6 +144,9 @@ int main(void) {
         c->token != 0xabc00000U + c->cfg_id || seen[c->cfg_id]) return 1;
     seen[c->cfg_id] = true;
   }
+  printf("ReRoCC async completion count = %lu\n",
+         (unsigned long)rr_async_completion_count);
+  printf("CPU progress after async end = %lu\n", (unsigned long)cpu_progress);
 
   for (int i = 0; i < 16; i++) rr_release(i);
 
