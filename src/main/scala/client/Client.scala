@@ -80,12 +80,19 @@ class ReRoCCClient(_params: ReRoCCClientParams = ReRoCCClientParams())(implicit 
 
     val csr_opc_io = io.csrs.take(4)
     val csr_bar_io = io.csrs(4)
-    val csr_cfg_io = io.csrs.drop(5)
+    val csr_irq_io = io.csrs(5)
+    val csr_cfg_io = io.csrs.drop(6)
 
     val csr_opc = Reg(Vec(4, UInt(log2Ceil(nCfgs).W)))
     val csr_opc_next = WireInit(csr_opc)
     val csr_cfg = RegInit(VecInit.fill(nCfgs) { 0.U.asTypeOf(new ReRoCCCfg) })
     val csr_cfg_next = WireInit(csr_cfg)
+    val irq_pending = RegInit(false.B)
+    val completion_set = rerocc.resp.fire &&
+      rerocc.resp.bits.opcode === ReRoCCProtocol.sUnbusyAck
+    val software_clear = csr_irq_io.wen && csr_irq_io.wdata(0)
+    val irq_pending_next = Mux(completion_set, true.B,
+      Mux(software_clear, false.B, irq_pending))
     val cfg_credits = RegInit(VecInit.fill(nCfgs) { p(ReRoCCIBufEntriesKey).U })
     val cfg_updatestatus = Reg(Vec(nCfgs, Bool()))
     val cfg_updateptbr = Reg(Vec(nCfgs, Bool()))
@@ -103,6 +110,11 @@ class ReRoCCClient(_params: ReRoCCClientParams = ReRoCCClientParams())(implicit 
       csr_cfg_io(i).sdata := csr_cfg_next(i).asUInt
     }
     csr_cfg := csr_cfg_next
+
+    csr_irq_io.set := true.B
+    csr_irq_io.sdata := irq_pending_next
+    irq_pending := irq_pending_next
+    io.interrupt := irq_pending
 
     val s_idle :: s_acq :: s_acq_ack :: s_rel :: s_rel_ack :: s_status0 :: s_status1 :: s_ptbr :: Nil = Enum(8)
     val cfg_acq_state = RegInit(s_idle)

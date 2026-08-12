@@ -13,6 +13,7 @@ object ReRoCCCSRs {
   val rropc2 = (0x802, log2Ceil(MAX_CFGS))
   val rropc3 = (0x803, log2Ceil(MAX_CFGS))
   val rrbar = (0x804, log2Ceil(MAX_CFGS))
+  val rrirq = (0x805, 1)
 
   val rrcfg0 = (0x810, 9)
   val rrcfg1 = (0x811, 9)
@@ -32,7 +33,7 @@ object ReRoCCCSRs {
   val rrcfg15 = (0x81f, 9)
 
   def customCSRs(nCfgs: Int) = (Seq(
-    rropc0, rropc1, rropc2, rropc3, rrbar,
+    rropc0, rropc1, rropc2, rropc3, rrbar, rrirq,
   ) ++ Seq(
     rrcfg0, rrcfg1, rrcfg2, rrcfg3,
     rrcfg4, rrcfg5, rrcfg6, rrcfg7,

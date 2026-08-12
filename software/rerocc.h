@@ -35,6 +35,7 @@
 #define CSR_RROPC2 0x802
 #define CSR_RROPC3 0x803
 #define CSR_RRBAR 0x804
+#define CSR_RRIRQ 0x805
 
 #define CSR_RRCFG0 0x810
 #define CSR_RRCFG1 0x811
@@ -55,6 +56,7 @@
 
 #define LIST_OF_RR_CSRS \
   F(CSR_RRBAR) \
+  F(CSR_RRIRQ) \
   F(CSR_RROPC0) \
   F(CSR_RROPC1) \
   F(CSR_RROPC2) \
@@ -128,6 +130,24 @@ static void rr_set_opc(uint8_t opc, uint32_t cfgId) {
 static void rr_fence(uint32_t cfgId) {
   write_rr_csr(CSR_RRBAR, cfgId);
   asm volatile("fence");
+}
+
+#define RR_IRQ_CAUSE_CODE 13
+#define RR_IRQ_MCAUSE ((uintptr_t)0x800000000000000dULL)
+#define RR_IRQ_MIE_MASK (1UL << RR_IRQ_CAUSE_CODE)
+#define RR_IRQ_MSTATUS_MIE (1UL << 3)
+
+static inline void rr_irq_enable(void) {
+  set_csr(mie, RR_IRQ_MIE_MASK);
+  set_csr(mstatus, RR_IRQ_MSTATUS_MIE);
+}
+
+static inline bool rr_irq_pending(void) {
+  return (read_rr_csr(CSR_RRIRQ) & 1) != 0;
+}
+
+static inline void rr_irq_ack(void) {
+  write_rr_csr(CSR_RRIRQ, 1);
 }
 
 #endif

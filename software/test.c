@@ -1,6 +1,22 @@
 #include "rerocc.h"
 #include <stdio.h>
 
+static volatile uint64_t rr_irq_count;
+
+uintptr_t handle_trap(uintptr_t epc, uintptr_t cause, uintptr_t tval,
+                      uintptr_t regs[32]) {
+  (void)regs;
+  if (cause == RR_IRQ_MCAUSE && rr_irq_pending()) {
+    rr_irq_count++;
+    rr_irq_ack();
+    return epc;
+  }
+
+  printf("Unexpected trap: cause=%lx epc=%lx tval=%lx\n",
+         (unsigned long)cause, (unsigned long)epc, (unsigned long)tval);
+  abort();
+}
+
 static inline void accum_write(int idx, unsigned long data) {
   ROCC_INSTRUCTION_SS(1, data, idx, 0);
 }
@@ -77,6 +93,8 @@ int main(void) {
 
   int r = 0;
 
+  rr_irq_enable();
+
   // For each tracker, assign opcode 1 to it, then perform the operation
   // The tracker will automatically forward instructions from the assigned opcode
   // the the accelerator allocated to that tracker
@@ -93,5 +111,10 @@ int main(void) {
 
   for (int i = 0; i < 16; i++) rr_release(i);
 
+  printf("ReRoCC IRQ count = %lu\n", (unsigned long)rr_irq_count);
+  if (r != 0 || rr_irq_count != 5)
+    return 1;
+
+  printf("IRQ TEST PASSED\n");
   return 0;
 }
