@@ -119,6 +119,7 @@ static bool rr_validate_completions(void) {
       if (!retired[j] && completion->token == expected_tokens[j]) {
         if (completion->cfg_id != expected_cfgs[j] ||
             completion->manager_id != expected_managers[j] ||
+            completion->client_id != 0 ||
             completion->status != 0) return false;
         retired[j] = true;
         found = true;

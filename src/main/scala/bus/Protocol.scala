@@ -70,6 +70,9 @@ class ReRoCCMsgBundle(val params: ReRoCCBundleParams) extends Bundle {
 }
 
 class ReRoCCCompletion(val params: ReRoCCBundleParams) extends Bundle {
+  // Physical client identity is carried in the client-local completion FIFO
+  // ABI.  cfg_id remains the logical configuration selected by that client.
+  val client_id = UInt(8.W)
   val cfg_id = UInt(ReRoCCProtocol.CfgBits.W)
   val manager_id = UInt(8.W)
   val token = UInt(ReRoCCProtocol.TokenBits.W)

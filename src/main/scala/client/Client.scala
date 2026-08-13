@@ -13,10 +13,14 @@ import rerocc.manager.{ReRoCCIBufEntriesKey}
 
 case class ReRoCCClientParams(
   nCfgs: Int = 16,
-  tileId: Int = 0
+  tileId: Int = 0,
+  clientId: Int = 0,
+  csrBase: Int = ReRoCCCSRs.DefaultBase,
+  opcodes: OpcodeSet = OpcodeSet.all
 ) {
   require(nCfgs <= 16)
-  def customCSRs = ReRoCCCSRs.customCSRs(nCfgs)
+  require(clientId >= 0 && clientId < 256)
+  def customCSRs = ReRoCCCSRs.customCSRs(nCfgs, csrBase)
 }
 
 class ReRoCCInstBundle(b: ReRoCCBundleParams)(implicit p: Parameters) extends Bundle {
@@ -65,7 +69,7 @@ class InstructionSender(b: ReRoCCBundleParams)(implicit p: Parameters) extends M
 
 
 class ReRoCCClient(_params: ReRoCCClientParams = ReRoCCClientParams())(implicit p: Parameters) extends
-    LazyRoCC(OpcodeSet.all, 2, roccCSRs = _params.customCSRs) with HasNonDiplomaticTileParameters {
+    LazyRoCC(_params.opcodes, 2, roccCSRs = _params.customCSRs) with HasNonDiplomaticTileParameters {
   val params = _params.copy(tileId = tileId)
   override def shouldBeInlined = false
 
@@ -129,7 +133,7 @@ class ReRoCCClient(_params: ReRoCCClientParams = ReRoCCClientParams())(implicit 
     csr_completion_count_io.sdata := completion_fifo.io.count
     csr_completion_data_io.set := true.B
     csr_completion_data_io.sdata := Mux(completion_fifo.io.deq.valid,
-      Cat(0.U(8.W), completion_fifo.io.deq.bits.status,
+      Cat(completion_fifo.io.deq.bits.client_id, completion_fifo.io.deq.bits.status,
         completion_fifo.io.deq.bits.manager_id,
         completion_fifo.io.deq.bits.cfg_id(7, 0),
         completion_fifo.io.deq.bits.token), 0.U)
@@ -272,6 +276,7 @@ class ReRoCCClient(_params: ReRoCCClientParams = ReRoCCClientParams())(implicit 
 
     completion_fifo.io.enq.valid := rerocc.resp.valid &&
       rerocc.resp.bits.opcode === ReRoCCProtocol.sCompletion
+    completion_fifo.io.enq.bits.client_id := params.clientId.U
     completion_fifo.io.enq.bits.cfg_id := ReRoCCProtocol.responseCfg(rerocc.resp.bits.data)
     completion_fifo.io.enq.bits.manager_id := rerocc.resp.bits.manager_id
     completion_fifo.io.enq.bits.token := ReRoCCProtocol.responseToken(rerocc.resp.bits.data)

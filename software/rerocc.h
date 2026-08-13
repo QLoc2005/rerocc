@@ -159,6 +159,7 @@ static inline void rr_irq_ack(void) {
 struct rr_completion {
   uint32_t token;
   uint32_t cfg_id;
+  uint8_t client_id;
   uint8_t manager_id;
   uint8_t status;
 };
@@ -169,6 +170,7 @@ static inline void rr_completion_decode(uint64_t data,
   completion->cfg_id = (uint32_t)((data >> 32) & 0xff);
   completion->manager_id = (uint8_t)((data >> 40) & 0xff);
   completion->status = (uint8_t)((data >> 48) & 0xff);
+  completion->client_id = (uint8_t)((data >> 56) & 0xff);
 }
 
 static inline void rr_completion_pop_data(struct rr_completion *completion) {

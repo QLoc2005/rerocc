@@ -35,7 +35,7 @@ LDFLAGS = -static
 
 include libgloss.mk
 
-PROGRAMS = test gemmini_async_test
+PROGRAMS = test gemmini_async_test rerocc_phase5_1r3c_test rerocc_phase5_1r1c3m_g8_test
 
 
 .DEFAULT_GOAL := default
