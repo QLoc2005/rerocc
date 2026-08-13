@@ -163,6 +163,18 @@ struct rr_completion {
   uint8_t status;
 };
 
+static inline void rr_completion_decode(uint64_t data,
+                                        struct rr_completion *completion) {
+  completion->token = (uint32_t)data;
+  completion->cfg_id = (uint32_t)((data >> 32) & 0xff);
+  completion->manager_id = (uint8_t)((data >> 40) & 0xff);
+  completion->status = (uint8_t)((data >> 48) & 0xff);
+}
+
+static inline void rr_completion_pop_data(struct rr_completion *completion) {
+  rr_completion_decode(read_rr_csr(CSR_RRCOMPLETION_DATA), completion);
+}
+
 static inline void rr_async_end(uint32_t cfg_id, uint32_t token) {
   uint64_t data = ((uint64_t)(cfg_id & 0x00ffffffU) << 40) |
                   ((uint64_t)token << 8);
@@ -176,11 +188,7 @@ static inline bool rr_completion_available(void) {
 
 static inline bool rr_completion_pop(struct rr_completion *completion) {
   if (!rr_completion_available()) return false;
-  uint64_t data = read_rr_csr(CSR_RRCOMPLETION_DATA);
-  completion->token = (uint32_t)data;
-  completion->cfg_id = (uint32_t)((data >> 32) & 0xff);
-  completion->manager_id = (uint8_t)((data >> 40) & 0xff);
-  completion->status = (uint8_t)((data >> 48) & 0xff);
+  rr_completion_pop_data(completion);
   return true;
 }
 

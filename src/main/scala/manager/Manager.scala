@@ -37,7 +37,10 @@ class ReRoCCManager(reRoCCTileParams: ReRoCCTileParams, roccOpcode: UInt)(implic
   override lazy val module = new Impl
   class Impl extends LazyModuleImp(this) {
     val io = IO(new Bundle {
-      val manager_id = Input(UInt(log2Ceil(p(ReRoCCTileKey).size).W))
+      // Keep a physical manager ID bit even in the dedicated one-manager
+      // Phase 4 configuration.  A bare log2Ceil(1).W creates a zero-width
+      // port and prevents that otherwise valid topology from elaborating.
+      val manager_id = Input(UInt(log2Ceil(p(ReRoCCTileKey).size max 2).W))
       val cmd = Decoupled(new RoCCCommand)
       val resp = Flipped(Decoupled(new RoCCResponse))
       val busy = Input(Bool())
