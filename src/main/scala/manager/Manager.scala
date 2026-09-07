@@ -10,6 +10,7 @@ import freechips.rocketchip.rocket._
 import freechips.rocketchip.util._
 import freechips.rocketchip.prci._
 import freechips.rocketchip.subsystem._
+import scala.language.reflectiveCalls
 
 import rerocc.bus._
 
@@ -44,6 +45,8 @@ class ReRoCCManager(reRoCCTileParams: ReRoCCTileParams, roccOpcode: UInt)(implic
       val cmd = Decoupled(new RoCCCommand)
       val resp = Flipped(Decoupled(new RoCCResponse))
       val busy = Input(Bool())
+      val completion_status = Input(UInt(ReRoCCProtocol.StatusBits.W))
+      val completion_status_captured = Output(Bool())
       val ptw = Flipped(new DatapathPTWIO)
     })
 
@@ -216,7 +219,8 @@ class ReRoCCManager(reRoCCTileParams: ReRoCCTileParams, roccOpcode: UInt)(implic
     resp_arb.io.in(5).bits.client_id  := completion_client
     resp_arb.io.in(5).bits.manager_id := io.manager_id
     resp_arb.io.in(5).bits.data       := ReRoCCProtocol.packCompletionResponse(
-      completion_cfg, completion_token, 0.U)
+      completion_cfg, completion_token, io.completion_status)
+    io.completion_status_captured := resp_arb.io.in(5).fire
     when (resp_arb.io.in(5).fire) {
       completion_armed := false.B
     }
@@ -293,6 +297,20 @@ class ReRoCCManagerTile()(implicit p: Parameters) extends LazyModule {
     rocc.module.io.cmd <> rerocc_manager.module.io.cmd
     rerocc_manager.module.io.resp <> rocc.module.io.resp
     rerocc_manager.module.io.busy := rocc.module.io.busy
+    // Gemmini exposes this optional port without adding a Gemmini dependency
+    // to the generic ReRoCC generator. Other RoCCs retain SUCCESS semantics.
+    type CompletionStatusSource = {
+      val rerocc_completion_status: UInt
+      val rerocc_completion_status_captured: Bool
+    }
+    rocc.module match {
+      case source: CompletionStatusSource =>
+        rerocc_manager.module.io.completion_status := source.rerocc_completion_status
+        source.rerocc_completion_status_captured :=
+          rerocc_manager.module.io.completion_status_captured
+      case _ =>
+        rerocc_manager.module.io.completion_status := 0.U
+    }
 
     ptw.io.dpath <> rerocc_manager.module.io.ptw
 
