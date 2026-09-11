@@ -92,6 +92,10 @@ class ReRoCCManager(reRoCCTileParams: ReRoCCTileParams, roccOpcode: UInt)(implic
     inst_q.io.enq.valid := false.B
     inst_q.io.enq.bits := next_enq_inst
     inst_q.io.enq.bits.inst.opcode := roccOpcode
+    // MStatus is part of the existing RoCCCommand ABI.  ReRoCC transports it
+    // separately via mUStatus, so attach the latest manager snapshot when the
+    // reconstructed command enters the instruction FIFO.
+    inst_q.io.enq.bits.status := status
 
     // 0 -> acquire ack
     // 1 -> inst ack

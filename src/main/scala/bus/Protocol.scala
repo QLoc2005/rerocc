@@ -17,11 +17,11 @@ object ReRoCCProtocol {
 
   val mAcquire = 0.U(width.W)
   // beat0: data = inst
-  // beat1: data = mstatus[63:0]
-  // beat2: data = mstatus[127:64]
+  // next beat: data = rs1 when inst.xs1
+  // next/final beat: data = rs2 when inst.xs2
   val mInst         = 1.U(width.W)
   // beat0: data = mstatus[63:0]
-  // beat1: data = mstatus[127:0]
+  // beat1: data = mstatus[127:64]
   val mUStatus      = 2.U(width.W)
   // beat0: data = ptbr
   val mUPtbr        = 3.U(width.W)
